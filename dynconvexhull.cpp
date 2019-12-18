@@ -18,7 +18,6 @@
 #include <fstream>
 #include <set>
 
-
 std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
 struct Point{
@@ -46,7 +45,7 @@ int64_t cross(Point a,Point b,Point c){
 template<class T>
 struct Treap{
   Treap* left,*right;
-  int64_t priority;
+  decltype(rng()) priority;
   int64_t size;
   T data;
   Treap(T data):left(NULL),right(NULL),priority(rng()),size(1),data(data){
@@ -123,63 +122,66 @@ struct Treap{
       return x->data;
     }
   }
-  static std::pair<int64_t,int64_t> bridge(Treap<Point>* left,Treap<Point>* right){
-    assert(left);
-    assert(right);
-    assert(kth(left,get_size(left)-1)<kth(right,0));
-    int64_t l1=0,r1=get_size(left)-1;
-    int64_t l2=0,r2=get_size(right)-1;
-    int64_t split_y=kth(right,0).y;
-    while(l1<r1||l2<r2){
-      int64_t m1=(l1+r1+1)/2;
-      int64_t m2=(l2+r2)/2;
-      Point b=kth(left,m1),c=kth(right,m2);
-      //Change cross(...)>0 to cross(...)>=0 to ignore points on edges
-      if(l1<r1&&cross(kth(left,m1-1),b,c)>0){
-	r1=m1-1;
-      }else if(l2<r2&&cross(b,c,kth(right,m2+1))>0){
-	l2=m2+1;
-      }else if(l1==r1){
-	r2=m2;
-      }else if(l2==r2){
+};
+
+std::pair<int64_t,int64_t> find_bridge(Treap<Point>* left,Treap<Point>* right){
+  assert(left);
+  assert(right);
+  assert(Treap<Point>::kth(left,Treap<Point>::get_size(left)-1)<Treap<Point>::kth(right,0));
+  int64_t l1=0,r1=Treap<Point>::get_size(left)-1;
+  int64_t l2=0,r2=Treap<Point>::get_size(right)-1;
+  int64_t split_y=Treap<Point>::kth(right,0).y;
+  while(l1<r1||l2<r2){
+    int64_t m1=(l1+r1+1)/2;
+    int64_t m2=(l2+r2)/2;
+    Point b=Treap<Point>::kth(left,m1),c=Treap<Point>::kth(right,m2);
+    //Change cross(...)>0 to cross(...)>=0 to ignore points on edges
+    if(l1<r1&&cross(Treap<Point>::kth(left,m1-1),b,c)>0){
+      r1=m1-1;
+    }else if(l2<r2&&cross(b,c,Treap<Point>::kth(right,m2+1))>0){
+      l2=m2+1;
+    }else if(l1==r1){
+      r2=m2;
+    }else if(l2==r2){
+      l1=m1;
+    }else{
+      Point a=Treap<Point>::kth(left,m1-1),d=Treap<Point>::kth(right,m2+1);
+      int64_t s1=cross(a,b,c);
+      int64_t s2=cross(b,a,d);
+      assert(s1+s2>=0);
+      //y=(s1*d.y+s2*c.y)/(s1+s2);
+      if(s1+s2==0||s1*d.y+s2*c.y<split_y*(s1+s2)){
 	l1=m1;
       }else{
-	Point a=kth(left,m1-1),d=kth(right,m2+1);
-	int64_t s1=cross(a,b,c);
-	int64_t s2=cross(b,a,d);
-	assert(s1+s2>=0);
-	//y=(s1*d.y+s2*c.y)/(s1+s2);
-	if(s1+s2==0||s1*d.y+s2*c.y<split_y*(s1+s2)){
-	  l1=m1;
-	}else{
-	  r2=m2;
-	}
+	r2=m2;
       }
     }
-    assert(l1==r1);
-    assert(l2==r2);
-    assert(l1==0||cross(kth(left,l1-1),kth(left,l1),kth(right,r2))<=0);
-    assert(r2==right->size-1||cross(kth(left,l1),kth(right,r2),kth(right,r2+1))<=0);
-    assert(l1==left->size-1||cross(kth(left,l1),kth(left,l1+1),kth(right,r2))>=0);
-    assert(r2==0||cross(kth(left,l1),kth(right,r2-1),kth(right,r2))>=0);
-    return {l1,r2};
   }
-  static Treap<Point>* concat_hulls(Treap<Point>* left,Treap<Point>* right,Treap<Point>*& save1,Treap<Point>*& save2,int64_t& cut){
-    cut=get_size(left);
-    if(left==NULL) return right;
-    if(right==NULL) return left;
-    std::pair<int64_t,int64_t> b=bridge(left,right);
-    cut=b.first+1;
-    split(left,b.first+1,left,save1);
-    split(right,b.second,save2,right);
-    return concat(left,right);
-  }
-  static void unconcat_hulls(Treap<Point>* x,Treap<Point>*& left,Treap<Point>*& right,Treap<Point>* save1,Treap<Point>* save2,int64_t cut){
-    split(x,cut,left,right);
-    left=concat(left,save1);
-    right=concat(save2,right);
-  }
-};
+  assert(l1==r1);
+  assert(l2==r2);
+  assert(l1==0||cross(Treap<Point>::kth(left,l1-1),Treap<Point>::kth(left,l1),Treap<Point>::kth(right,r2))<=0);
+  assert(r2==right->size-1||cross(Treap<Point>::kth(left,l1),Treap<Point>::kth(right,r2),Treap<Point>::kth(right,r2+1))<=0);
+  assert(l1==left->size-1||cross(Treap<Point>::kth(left,l1),Treap<Point>::kth(left,l1+1),Treap<Point>::kth(right,r2))>=0);
+  assert(r2==0||cross(Treap<Point>::kth(left,l1),Treap<Point>::kth(right,r2-1),Treap<Point>::kth(right,r2))>=0);
+  return {l1,r2};
+}
+
+Treap<Point>* concat_hulls(Treap<Point>* left,Treap<Point>* right,Treap<Point>*& save1,Treap<Point>*& save2,int64_t& cut){
+  cut=Treap<Point>::get_size(left);
+  if(left==NULL) return right;
+  if(right==NULL) return left;
+  std::pair<int64_t,int64_t> bridge=find_bridge(left,right);
+  cut=bridge.first+1;
+  Treap<Point>::split(left,bridge.first+1,left,save1);
+  Treap<Point>::split(right,bridge.second,save2,right);
+  return Treap<Point>::concat(left,right);
+}
+
+void unconcat_hulls(Treap<Point>* x,Treap<Point>*& left,Treap<Point>*& right,Treap<Point>* save1,Treap<Point>* save2,int64_t cut){
+  Treap<Point>::split(x,cut,left,right);
+  left=Treap<Point>::concat(left,save1);
+  right=Treap<Point>::concat(save2,right);
+}
 
 struct HullData{
   Point p;
@@ -207,22 +209,22 @@ void Treap<HullData>::pull(){
   if(right){
     Treap<Point>* save0;
     int64_t cut2;
-    data.hull=Treap<Point>::concat_hulls(data.hull,right->data.hull,save0,data.save1,cut2);
+    data.hull=concat_hulls(data.hull,right->data.hull,save0,data.save1,cut2);
     assert(save0==NULL);
     assert(cut2==1);
   }
   if(left){
-    data.hull=Treap<Point>::concat_hulls(left->data.hull,data.hull,data.save2,data.save3,data.cut1);
+    data.hull=concat_hulls(left->data.hull,data.hull,data.save2,data.save3,data.cut1);
   }
 }
 
 template<>
 void Treap<HullData>::push(){
   if(left){
-    Treap<Point>::unconcat_hulls(data.hull,left->data.hull,data.hull,data.save2,data.save3,data.cut1);
+    unconcat_hulls(data.hull,left->data.hull,data.hull,data.save2,data.save3,data.cut1);
   }
   if(right){
-    Treap<Point>::unconcat_hulls(data.hull,data.hull,right->data.hull,NULL,data.save1,1);
+    unconcat_hulls(data.hull,data.hull,right->data.hull,NULL,data.save1,1);
   }
 }
 
@@ -242,7 +244,7 @@ void log_seg(Point p,Point q){
 
 int main(){
   Treap<HullData>* hull=NULL;
-  if(0){
+  if(1){
     std::set<Point> points;
     for(int64_t i=0;i<1000;i++){
       Point p{rng()%100000,rng()%100000};
