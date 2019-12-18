@@ -7,7 +7,6 @@
 
 //TODO: Benchmark (without asserts)
 //      Is this faster than naively recomputing convex hull?
-//TODO: One of the saves is always NULL, remove it. Similar for a cut.
 //TODO: We don't need to allocate a new Treap<Point> to delete point
 //TODO: Clean up code
 //TODO: Remove extra log from binary search
@@ -43,6 +42,7 @@ int64_t cross(Point a,Point b,Point c){
   return (b-a).cross(c-a);
 }
 
+//Warning: memory leak if deleting Treap with more than one element
 template<class T>
 struct Treap{
   Treap* left,*right;
@@ -54,9 +54,8 @@ struct Treap{
   static int64_t get_size(Treap* x){
     return x?x->size:0;
   }
-  Treap* pull(){
+  void pull(){
     size=1+get_size(left)+get_size(right);
-    return this;
   }
   void push(){
   }
@@ -66,11 +65,13 @@ struct Treap{
     if(x->priority<y->priority){
       y->push();
       y->left=concat(x,y->left);
-      return y->pull();
+      y->pull();
+      return y;
     }else{
       x->push();
       x->right=concat(x->right,y);
-      return x->pull();
+      x->pull();
+      return x;
     }
   }
   static void split(Treap* x,int64_t k,Treap*& L,Treap*& R){
@@ -146,14 +147,9 @@ struct Treap{
 	Point a=kth(left,m1-1),d=kth(right,m2+1);
 	int64_t s1=cross(a,b,c);
 	int64_t s2=cross(b,a,d);
-	if(s1+s2==0){
-	  l1=m1;
-	  r2=m2;
-	  continue;
-	}
-	assert(s1+s2>0);
+	assert(s1+s2>=0);
 	//y=(s1*d.y+s2*c.y)/(s1+s2);
-	if(s1*d.y+s2*c.y<split_y*(s1+s2)){
+	if(s1+s2==0||s1*d.y+s2*c.y<split_y*(s1+s2)){
 	  l1=m1;
 	}else{
 	  r2=m2;
@@ -188,10 +184,10 @@ struct Treap{
 struct HullData{
   Point p;
   Treap<Point>* hull;
-  Treap<Point>* save1,*save2;//from merging L and M
-  Treap<Point>* save3,*save4;//from merging L+M and R
-  int64_t cut1,cut2;
-  HullData(Point p):p(p),hull(new Treap<Point>(p)),save1(NULL),save2(NULL),save3(NULL),save4(NULL){
+  Treap<Point>* save1;//from merging p and R
+  Treap<Point>* save2,*save3;//from merging L and p+R
+  int64_t cut1;
+  HullData(Point p):p(p),hull(new Treap<Point>(p)),save1(NULL),save2(NULL),save3(NULL){
   }
   HullData(const HullData& h):HullData(h.p){
     assert(Treap<Point>::get_size(h.hull)==1);
@@ -206,24 +202,27 @@ struct HullData{
 };
 
 template<>
-Treap<HullData>* Treap<HullData>::pull(){
+void Treap<HullData>::pull(){
   size=1+get_size(left)+get_size(right);
-  if(left){
-    data.hull=Treap<Point>::concat_hulls(left->data.hull,data.hull,data.save1,data.save2,data.cut1);
-  }
   if(right){
-    data.hull=Treap<Point>::concat_hulls(data.hull,right->data.hull,data.save3,data.save4,data.cut2);
+    Treap<Point>* save0;
+    int64_t cut2;
+    data.hull=Treap<Point>::concat_hulls(data.hull,right->data.hull,save0,data.save1,cut2);
+    assert(save0==NULL);
+    assert(cut2==1);
   }
-  return this;
+  if(left){
+    data.hull=Treap<Point>::concat_hulls(left->data.hull,data.hull,data.save2,data.save3,data.cut1);
+  }
 }
 
 template<>
 void Treap<HullData>::push(){
-  if(right){
-    Treap<Point>::unconcat_hulls(data.hull,data.hull,right->data.hull,data.save3,data.save4,data.cut2);
-  }
   if(left){
-    Treap<Point>::unconcat_hulls(data.hull,left->data.hull,data.hull,data.save1,data.save2,data.cut1);
+    Treap<Point>::unconcat_hulls(data.hull,left->data.hull,data.hull,data.save2,data.save3,data.cut1);
+  }
+  if(right){
+    Treap<Point>::unconcat_hulls(data.hull,data.hull,right->data.hull,NULL,data.save1,1);
   }
 }
 
@@ -242,116 +241,35 @@ void log_seg(Point p,Point q){
 }
 
 int main(){
+  Treap<HullData>* hull=NULL;
   if(0){
-    Treap<Point>* root1=NULL;
-    for(int64_t i=0;i<5;i++){
-      root1=Treap<Point>::concat(root1,new Treap<Point>({(i-2)*(i-2),i}));
-    }
-    Treap<Point>* root2=NULL;
-    for(int64_t i=0;i<5;i++){
-      root2=Treap<Point>::concat(root2,new Treap<Point>({(i-2)*(i-2),i+5}));
-    }
-    for(int64_t i=0;i<root1->size;i++){
-      log_point(Treap<Point>::kth(root1,i));
-    }
-    for(int64_t i=0;i<root2->size;i++){
-      log_point(Treap<Point>::kth(root2,i));
-    }
-    std::pair<int64_t,int64_t> bridge=Treap<Point>::bridge(root1,root2);
-    log_seg(Treap<Point>::kth(root1,bridge.first),
-	    Treap<Point>::kth(root2,bridge.second));
-  }
-  if(0){
-    Treap<Point>* root1=NULL;
-    for(int64_t i=0;i<5;i++){
-      root1=Treap<Point>::concat(root1,new Treap<Point>({(i-4)*(i-4)+5,i}));
-    }
-    Treap<Point>* root2=NULL;
-    for(int64_t i=0;i<5;i++){
-      root2=Treap<Point>::concat(root2,new Treap<Point>({(i-0)*(i-0),i+5}));
-    }
-    for(int64_t i=0;i<root1->size;i++){
-      log_point(Treap<Point>::kth(root1,i));
-    }
-    for(int64_t i=0;i<root2->size;i++){
-      log_point(Treap<Point>::kth(root2,i));
-    }
-    std::pair<int64_t,int64_t> bridge=Treap<Point>::bridge(root1,root2);
-    log_seg(Treap<Point>::kth(root1,bridge.first),
-	    Treap<Point>::kth(root2,bridge.second));
-  }
-  if(0){
-    Treap<Point>* root=new Treap<Point>(Point{-1,-1});
-    Treap<Point>* ign1,*ign2;
-    for(int64_t i=0;i<20;i++){
-      Point p{rng()%1000,i};
-      log_point(p);
-      int64_t cut;
-      Treap<Point>* add=new Treap<Point>({p});
-      root=Treap<Point>::concat_hulls(root,add,ign1,ign2,cut);
-      Treap<Point>::unconcat_hulls(root,root,add,ign1,ign2,cut);
-      root=Treap<Point>::concat_hulls(root,add,ign1,ign2,cut);
-    }
-    for(int64_t i=0;i<root->size-1;i++){
-      log_seg(Treap<Point>::kth(root,i),Treap<Point>::kth(root,i+1));
-    }
-  }
-  if(0){
-    Treap<HullData>* hull=NULL;
-    for(int64_t i=0;i<20;i++){
-      Point p{rng()%1000,i};
-      log_point(p);
-      hull=Treap<HullData>::concat(hull,new Treap<HullData>(p));
-    }
-    Treap<Point>* root=hull->data.hull;
-    for(int64_t i=0;i<root->size-1;i++){
-      log_seg(Treap<Point>::kth(root,i),Treap<Point>::kth(root,i+1));
-    }
-  }
-  if(1){
-    Treap<HullData>* hull=NULL;
     std::set<Point> points;
-    for(int64_t i=0;i<100000;i++){
-      Point p{rng()%1000,rng()%1000};
+    for(int64_t i=0;i<1000;i++){
+      Point p{rng()%100000,rng()%100000};
       if(points.count(p)) continue;
       points.insert(p);
-      //log_point(p);
+      log_point(p);
       hull=Treap<HullData>::insert(hull,HullData(p));
     }
-    while(hull){
-      Treap<Point>* root=hull->data.hull;
-      for(int64_t i=0;i<Treap<Point>::get_size(root)-1;i++){
-	//log_seg(Treap<Point>::kth(root,i),Treap<Point>::kth(root,i+1));
-      }
-      std::vector<Point> ps;
-      for(int64_t i=0;i<Treap<Point>::get_size(root);i++){
-	ps.push_back(Treap<Point>::kth(root,i));
-      }
-      for(Point p:ps){
-	hull=Treap<HullData>::erase(hull,HullData(p));
-      }
-    }
-  }
-  if(0){
-    Treap<HullData>* hull=NULL;
+  }else{
     for(int64_t i=0;i<10;i++){
       for(int64_t j=0;j<10;j++){
 	log_point(Point{i,j});
 	hull=Treap<HullData>::insert(hull,HullData(Point{i,j}));
       }
     }
-    while(hull){
-      Treap<Point>* root=hull->data.hull;
-      for(int64_t i=0;i<Treap<Point>::get_size(root)-1;i++){
-	log_seg(Treap<Point>::kth(root,i),Treap<Point>::kth(root,i+1));
-      }
-      std::vector<Point> ps;
-      for(int64_t i=0;i<Treap<Point>::get_size(root);i++){
-	ps.push_back(Treap<Point>::kth(root,i));
-      }
-      for(Point p:ps){
-	hull=Treap<HullData>::erase(hull,HullData(p));
-      }
+  }
+  while(hull){
+    Treap<Point>* root=hull->data.hull;
+    for(int64_t i=0;i<Treap<Point>::get_size(root)-1;i++){
+      log_seg(Treap<Point>::kth(root,i),Treap<Point>::kth(root,i+1));
+    }
+    std::vector<Point> ps;
+    for(int64_t i=0;i<Treap<Point>::get_size(root);i++){
+      ps.push_back(Treap<Point>::kth(root,i));
+    }
+    for(Point p:ps){
+      hull=Treap<HullData>::erase(hull,HullData(p));
     }
   }
 }
