@@ -1,5 +1,4 @@
 //Implementation of online fully dynamic convex hull
-//Currently only for one side but it should be easy to add the other side
 //O(log^2n) per operation
 //Based on paper "Maintenance of configurations in the plane" by Overmars and van Leeuwen
 //Using join-based treaps as BST
@@ -9,7 +8,7 @@
 //TODO: Benchmark (without asserts)
 //      Is this faster than naively recomputing convex hull?
 //TODO: We don't need to allocate a new Treap<Point> to delete point
-//TODO: Clean up code
+//TODO: insert/erase can be optimized
 
 #include <cstdio>
 #include <random>
@@ -17,6 +16,7 @@
 #include <fstream>
 #include <set>
 #include <cassert>
+#include <algorithm>
 
 std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
@@ -34,6 +34,12 @@ struct Point{
   bool operator<(Point p)const{
     if(y!=p.y) return y<p.y;
     return x<p.x;
+  }
+  bool operator==(Point p)const{
+    return x==p.x&&y==p.y;
+  }
+  Point operator-()const{
+    return {-x,-y};
   }
 };
 
@@ -124,6 +130,14 @@ struct Treap{
       return x->data;
     }
   }
+  template<class Func>
+  static void for_each(Treap* x,Func callback){
+    if(x){
+      for_each(x->left,callback);
+      callback(x->data);
+      for_each(x->right,callback);
+    }
+  }
 };
 
 struct Walker{
@@ -172,7 +186,7 @@ std::pair<int64_t,int64_t> find_bridge(Treap<Point>* left,Treap<Point>* right){
   assert(right);
   assert(Treap<Point>::kth(left,Treap<Point>::get_size(left)-1)<Treap<Point>::kth(right,0));
   struct Walker w1(left),w2(right);
-  int64_t split_y=Treap<Point>::kth(right,0).y;
+  int64_t split_y=right->leftmost->data.y;
   while(!w1.unique()||!w2.unique()){
     Point b=w1.mr(),c=w2.ml();
     //Change cross(...)>0 to cross(...)>=0 to ignore points on edges
@@ -281,36 +295,84 @@ void log_seg(Point p,Point q){
   fout<<"L "<<p.x<<" "<<p.y<<" "<<q.x<<" "<<q.y<<std::endl;
 }
 
-int main(){
-  Treap<HullData>* hull=NULL;
-  if(0){
-    std::set<Point> points;
-    for(int64_t i=0;i<100000;i++){
-      Point p{rng()%100000,rng()%100000};
-      if(points.count(p)) continue;
-      points.insert(p);
-      log_point(p);
-      hull=Treap<HullData>::insert(hull,HullData(p));
-    }
-  }else{
-    for(int64_t i=0;i<10;i++){
-      for(int64_t j=0;j<10;j++){
-	log_point(Point{i,j});
-	hull=Treap<HullData>::insert(hull,HullData(Point{i,j}));
-      }
+std::vector<Point> generate_random(int amt){
+  std::vector<Point> points;
+  for(int64_t i=0;i<amt;i++){
+    Point p{rng()%100000,rng()%100000};
+    points.push_back(p);
+  }
+  std::sort(points.begin(),points.end());
+  points.erase(std::unique(points.begin(),points.end()),points.end());
+  return points;
+}
+
+
+std::vector<Point> generate_grid(int rows,int cols){
+  std::vector<Point> points;
+  for(int64_t i=0;i<rows;i++){
+    for(int64_t j=0;j<cols;j++){
+      Point p{i,j};
+      points.push_back(p);
     }
   }
-  while(hull){
-    Treap<Point>* root=hull->data.hull;
-    for(int64_t i=0;i<Treap<Point>::get_size(root)-1;i++){
-      log_seg(Treap<Point>::kth(root,i),Treap<Point>::kth(root,i+1));
-    }
+  return points;
+}
+
+void test_insert_erase(std::vector<Point>& points){
+  std::shuffle(points.begin(),points.end(),rng);
+  
+  Treap<HullData>* hull=NULL;
+  
+  fprintf(stderr,"Inserting...");
+  for(Point p:points){
+    hull=Treap<HullData>::insert(hull,HullData(p));
+  }
+  fprintf(stderr,"Done\n");
+  
+  std::shuffle(points.begin(),points.end(),rng);
+  
+  fprintf(stderr,"Erasing...");
+  for(Point p:points){
+    hull=Treap<HullData>::erase(hull,HullData(p));
+  }
+  fprintf(stderr,"Done\n");
+}
+
+void test_nested(std::vector<Point> points){
+  std::sort(points.begin(),points.end());
+  
+  fprintf(stderr,"Inserting...");
+  Treap<HullData>* left=NULL,*right=NULL;
+  for(Point p:points){
+    left=Treap<HullData>::insert(left,HullData(p));
+    right=Treap<HullData>::insert(right,HullData(-p));
+  }
+  fprintf(stderr,"Done\n");
+  
+  fprintf(stderr,"Erasing in shells...");
+  while(Treap<HullData>::get_size(left)>1){
     std::vector<Point> ps;
-    for(int64_t i=0;i<Treap<Point>::get_size(root);i++){
-      ps.push_back(Treap<Point>::kth(root,i));
+    for(int64_t i=0;i<Treap<Point>::get_size(left->data.hull)-1;i++){
+      log_seg(Treap<Point>::kth(left->data.hull,i),Treap<Point>::kth(left->data.hull,i+1));
+      ps.push_back(Treap<Point>::kth(left->data.hull,i));
+    }
+    for(int64_t i=0;i<Treap<Point>::get_size(right->data.hull)-1;i++){
+      log_seg(-Treap<Point>::kth(right->data.hull,i),-Treap<Point>::kth(right->data.hull,i+1));
+      ps.push_back(-Treap<Point>::kth(right->data.hull,i));
     }
     for(Point p:ps){
-      hull=Treap<HullData>::erase(hull,HullData(p));
+      left=Treap<HullData>::erase(left,HullData(p));
+      right=Treap<HullData>::erase(right,HullData(-p));
     }
   }
+  fprintf(stderr,"Done\n");
+}
+
+int main(){
+  std::vector<Point> points=generate_random(1000);
+  for(Point p:points){
+    log_point(p);
+  }
+  //test_insert_erase(points);
+  test_nested(points);
 }
