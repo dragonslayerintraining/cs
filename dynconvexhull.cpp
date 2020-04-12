@@ -9,6 +9,8 @@
 //      Is this faster than naively recomputing convex hull?
 //TODO: We don't need to allocate a new Treap<Point> to delete point
 //TODO: insert/erase can be optimized
+//TODO: asserts fail sometimes when all points are collinear
+//      output without asserts seem correct though
 
 #include <cstdio>
 #include <random>
